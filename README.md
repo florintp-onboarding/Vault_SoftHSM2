@@ -10,7 +10,7 @@ Succcessful deployment of the infrastructure will configure and start a [Vault](
 The KMS stored in a [SoftHSM2](https://github.com/opendnssec/SoftHSMv2) slot.
 
 # Disclaimer
-This is for debugging pand learning purposes only.
+This is for debugging and learning purposes only.
 
 # Prerequisites
 - A valid AWS subscription and enough permissions for deploying an EC2 instace, create Security Groups, create Elastic IPs.

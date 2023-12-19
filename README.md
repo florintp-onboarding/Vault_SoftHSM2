@@ -5,6 +5,7 @@
 This is a Terraform code that will install and configure a single [Vault](https://www.vaultproject.io/) instance on AWS region us-east2.
 The EC2 may be configurable with an [Ubuntu](https://ubuntu.com/) AMI or an Amazon Linux 2 AMI.
 The TF code will also install and configure a software HSM - [SoftHSM2](https://github.com/opendnssec/SoftHSMv2).
+Original setup and code is [here](https://github.com/kwagga/Vault_SoftHSM2).
 
 Succcessful deployment of the infrastructure will configure and start a [Vault](https://www.vaultproject.io/) instance with auto-unseal using an KMS key.
 The KMS stored in a [SoftHSM2](https://github.com/opendnssec/SoftHSMv2) slot.

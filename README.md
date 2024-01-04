@@ -2,21 +2,17 @@
 
 ## Install and configure Vault and SoftHSM2 for demonstration purposes
 
-This is a Terraform code that will install and configure a single [Vault](https://www.vaultproject.io/) instance on AWS region us-east2.
-The EC2 may be configurable with an [Ubuntu](https://ubuntu.com/) AMI or an Amazon Linux 2 AMI.
-The TF code will also install and configure a software HSM - [SoftHSM2](https://github.com/opendnssec/SoftHSMv2).
-Original setup and code is [here](https://github.com/kwagga/Vault_SoftHSM2).
+This is a simple script that will install and configure a single [Vault](https://www.vaultproject.io/) instance as well as [SoftHSM2](https://github.com/opendnssec/SoftHSMv2) on an [Ubuntu](https://ubuntu.com/) VM.
 
-Succcessful deployment of the infrastructure will configure and start a [Vault](https://www.vaultproject.io/) instance with auto-unseal using an KMS key.
-The KMS stored in a [SoftHSM2](https://github.com/opendnssec/SoftHSMv2) slot.
+A successful execution of the script should provide you with a [Vault](https://www.vaultproject.io/) instance that auto-unseal using keys stored in a [SoftHSM2](https://github.com/opendnssec/SoftHSMv2) slot.
 
 # Disclaimer
-This is for debugging and learning purposes only.
+Please do not use this for production employments. This is for lab/testing/demonstration purposes only.
 
 # Prerequisites
-- A valid AWS subscription and enough permissions for deploying an EC2 instace, create Security Groups, create Elastic IPs.
+- An x86_64 Ubuntu VM (VirtualBox, AWS, gcloud, etc) - Testing was done on Jammy Jellyfish - see the [tf](https://github.com/kwagga/Vault_SoftHSM2/tree/main/tf) folder for a sandbox
+- Bash shell
 - [Vault Enterprise License](https://www.vaultproject.io/docs/enterprise/license) (HSM support is only available for Vault Enterprise)
-- The infrastructure as code tool [Terraform](https://developer.hashicorp.com/terraform/install) 
 
 # Usage
 ## Clone the repo
@@ -28,7 +24,7 @@ cd Vault_SoftHSM2
 - Populate `vault_license.hclic` with your license.
 
 
-## Choose the AWS region into variables.tf (line 17)
+## Choose the AWS region into variables.tf (line 15)
 ```shell
 
 variable "region" {
@@ -36,15 +32,12 @@ variable "region" {
   description = "Default Region"
   sensitive   = false
   default     = "us-east-2"
-  # Change the AMI to ami-098dd3a86ea110896
-#  default     = "eu-central-1"
 }
 
 
 ```
 
 ## Create a SSH Keypair into the desired AWS region
-[AWS Console-> Netwpork & Security -> Key Pairs](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/create-key-pairs.html)
 
 ## Ammend the keypair into main.tf as for example (in line 69)
 
@@ -55,13 +48,7 @@ variable "region" {
     user_data_replace_on_change = true
 ...
 ```
-## Prepare the AWS environment variables
-```
-AWS_ACCESS_KEY_ID='<your_access_key_id>'
-AWS_ACCOUNT_ID='<your_account_id>'
-AWS_SECRET_ACCESS_KEY='<your_key>'
-AWS_SESSION_TOKEN='<your_token'
-```
+
 ## Initialize Terraform and create infrastructure
 ```shell
 terraform init

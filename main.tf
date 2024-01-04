@@ -4,13 +4,31 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "4.49.0"
+      version = "5.31.0"
+      # version = "4.49.0"
     }
   }
 }
 
 provider "aws" {
   region = var.region
+}
+
+data "aws_ami" "amzn" {
+  most_recent = true
+  owners      = ["amazon"]
+  filter {
+    name   = "architecture"
+    values = ["x86_64"]
+  }
+  filter {
+    name   = "name"
+    values = ["amzn2-ami-kernel-*-x86_64-gp2"]
+  }
+  filter {
+    name   = "virtualization-type"
+    values = ["hvm"]
+  }
 }
 
 resource "aws_security_group" "vault-debug" {
@@ -25,7 +43,7 @@ resource "aws_security_group" "vault-debug" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  ingress {
+ingress {
     description = "Vault"
     from_port   = 8200
     to_port     = 8200
@@ -33,10 +51,18 @@ resource "aws_security_group" "vault-debug" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  ingress {
+ingress {
     description = "Vault"
     from_port   = 8201
     to_port     = 8201
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+ingress {
+    description = "Vault"
+    from_port   = 8202
+    to_port     = 8202
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -54,20 +80,11 @@ resource "aws_security_group" "vault-debug" {
   }
 }
 
-
 resource "aws_instance" "vault-debug" {
 
-  # EU-CENTRAL-1
-  # RHEL
-  #ami                         = "ami-0b8ea3624881b47a1"
-  # AmazonLinux
-  #ami                         = "ami-0b5c00c0109ecef42"
-
-  # AmazonLinux - US-EAST-2
-  ami                         = "ami-098dd3a86ea110896"
-
+  ami = data.aws_ami.amzn.id
   instance_type               = "t3.micro"
-  key_name                    = "<mykey>"
+  key_name                    = "mykeypair1"
   user_data_replace_on_change = true
 
   vpc_security_group_ids = [aws_security_group.vault-debug.id]
@@ -76,7 +93,7 @@ resource "aws_instance" "vault-debug" {
 
   # Wait until complete installation with `tail -f /var/log/cloud-init-output.log`
   user_data = <<-EOF
-    #!/bin/sh
+    #!/usr/bin/env sh
     set -x
 
     # RHEL
@@ -95,20 +112,19 @@ resource "aws_instance" "vault-debug" {
     yum -y install ${local.vault_version}
 
     export SOFTHSMLIB=""
-    export SOFTLIBLOCS=("/usr/lib64/libsofthsm2.so" "/usr/local/lib/softhsm/libsofthsm2.so" "/usr/lib/x86_64-linux-gnu/softhsm/libsofthsm2.so")
-    for i in "$SOFTLIBLOCS"; do
-            if [ -f "$i" ]; then
-                    export SOFTHSMLIB="$i"
-            fi
+    export SOFTLIBLOCS="/usr/lib64/libsofthsm2.so /usr/local/lib/softhsm/libsofthsm2.so /usr/lib/x86_64-linux-gnu/softhsm/libsofthsm2.so"
+    for i in $SOFTLIBLOCS; do
+       test -f "$i" &&  export SOFTHSMLIB="$i"
     done
     
     if [ -z $SOFTHSMLIB ]; then
-            2> echo "Failed to find the location of soft hsm library"
-            exit 1
+       2> echo "Failed to find the location of soft hsm library"
+       exit 1
     fi
 
     cat >/etc/vault.d/vault.env <<-EOS
     VAULT_DISABLE_SUPPORTED_STORAGE_CHECK=true
+    #VAULT_LICENSE_PATH=/etc/vault.d/vault.hclic
     EOS
 
     cat >/etc/vault.d/vault.hcl <<-EOT
@@ -124,30 +140,30 @@ resource "aws_instance" "vault-debug" {
     }
       ui = true
 
-      storage "file" {
+      storage "raft" {
         path = "/opt/vault/data"
+        node_id = "raft_node_1"
       }
 
       listener "tcp" {
         address     = "0.0.0.0:8200"
         tls_disable = 1
       }
+      cluster_addr = "http://127.0.0.1:8201"
+      api_addr = "http://127.0.0.1:8200"
 
       license_path = "/etc/vault.d/vault.hclic"
       disable_sealwrap = "true"
 
       seal "pkcs11" {
-        #lib            = "/usr/lib64/softhsm/libsofthsm.so"
         lib            = "$SOFTHSMLIB"
         token_label    = "unseal"
         pin            = "prettysecret"
         key_label      = "vault-unseal-key"
         hmac_key_label = "vault-unseal-hmac"
         generate_key   = "true"
+        # Used for seal migrations
         disabled       = "false"
-        #NOT valid for HSM
-        #mechanism      = "0x251"
-        #mechanism      = "0x1087"
       }
 
       kms_library "pkcs11" {
@@ -158,14 +174,19 @@ resource "aws_instance" "vault-debug" {
 
     echo ${local.license} >/etc/vault.d/vault.hclic
 
-    mkdir -p /var/lib/softhsm/tokens/
+    rm -rf  /var/lib/softhsm/tokens
+    mkdir -p /var/lib/softhsm/tokens
+    chown vault:vault /var/lib/softhsm
+    chown -R vault:vault /var/lib/softhsm/tokens
+
     softhsm2-util --init-token --slot 0 --label "unseal" --pin prettysecret --so-pin sosecret --id 44cda736-9b7b-bbd6-95ed-6d4a38d1821f
     softhsm2-util --init-token --slot 1 --label "managed-keys" --pin prettysecret --so-pin sosecret --id 4c842833-3d84-3838-4e99-a1911cbe1e9a
     #[ -d /var/lib/softhsm/tokens/44cda736-9b7b-bbd6-95ed-6d4a38d1821f ] || softhsm2-util --init-token --slot 0 --label "unseal" --pin prettysecret --so-pin sosecret --id 44cda736-9b7b-bbd6-95ed-6d4a38d1821f
     #[ -d /var/lib/softhsm/tokens/4c842833-3d84-3838-4e99-a1911cbe1e9a ] || softhsm2-util --init-token --slot 1 --label "managed-keys" --pin prettysecret --so-pin sosecret --id 4c842833-3d84-3838-4e99-a1911cbe1e9a
 
-    usermod -a -G ods vault -d /opt/vault -s /bin/bash
-    chown -R vault:vault /var/lib/softhsm/tokens/
+    usermod  vault -d /opt/vault -s /bin/bash
+    chown vault:vault /var/lib/softhsm
+    chown -R vault:vault /var/lib/softhsm/* 
 
     setcap CAP_NET_BIND_SERVICE=+eip /usr/bin/vault
     mkdir -p /etc/systemd/system/vault.service.d/
@@ -193,7 +214,8 @@ resource "aws_instance" "vault-debug" {
 
 resource "aws_eip" "ip-vault-debug" {
   instance = aws_instance.vault-debug.id
-  vpc      = true
+  domain = "vpc"
+  # vpc      = true
   tags = {
     Name = "${random_pet.name.id}-ip"
   }
@@ -213,11 +235,13 @@ vault status
 
 ###
 # Bypass fingerprint verification
-SSH to the EC2 instance: ssh -o "StrictHostKeyChecking=no"  -i "mykeypair1.pem" ec2-user@${aws_eip.ip-vault-debug.public_dns}
-GET the ROOT TOKEN: export VAULT_TOKEN=$(cat keys.json |jq -r '.root_token')
-
+# SSH to the EC2 instance:
+  ssh -o "StrictHostKeyChecking=no"  -i "mykeypair1.pem" ec2-user@${aws_eip.ip-vault-debug.public_dns}
+# GET the ROOT TOKEN:
+  export VAULT_TOKEN=$(cat keys.json |jq -r '.root_token')
 ###
 EOF
+
 }
 
 ######
@@ -268,6 +292,6 @@ resource "aws_route_table_association" "subnet-association" {
 resource "random_pet" "name" {
   length    = 1
   separator = "-"
-  prefix    = "vault-kb"
+  prefix    = "vault"
 }
 
